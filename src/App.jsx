@@ -86,7 +86,9 @@ function App() {
 
         <Route path="/history/detail" element={
           user ? (
-            <TaskDetail />
+            <Layout user={user} onLogout={handleLogout}>
+              <TaskDetail />
+            </Layout>
           ) : (
             <Navigate to="/login" />
           )

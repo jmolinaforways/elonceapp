@@ -36,8 +36,9 @@ const TaskDetail = () => {
         if (!url) return null
         const match = url.match(/\/d\/([a-zA-Z0-9_-]+)/)
         if (match && match[1]) {
-            // Use the thumbnail API which is more reliable for embedding than the export=view link
-            return `https://drive.google.com/thumbnail?id=${match[1]}&sz=w1920`
+            // Use the Google CDN link format which is most reliable for direct image embedding
+            // format: https://lh3.googleusercontent.com/d/{FILE_ID}=w{WIDTH}
+            return `https://lh3.googleusercontent.com/d/${match[1]}=w1000`
         }
         return url
     }
@@ -45,19 +46,23 @@ const TaskDetail = () => {
     // Initialize image source on mount or task change
     React.useEffect(() => {
         if (task) {
-            // Try high res first, then low res
-            const highRes = getDirectDriveUrl(task.portada_link)
-            setImgSrc(highRes || task.miniatura_web)
+            // Use our own proxy to fetch the image "locally"
+            // We behave as if we are downloading it to the app
+            if (task.miniatura_web) {
+                setImgSrc(`/api/proxy?url=${encodeURIComponent(task.miniatura_web)}`)
+            } else if (task.portada_link) {
+                setImgSrc(`/api/proxy?url=${encodeURIComponent(task.portada_link)}`)
+            }
             setImgError(false)
         }
     }, [task])
 
     const handleImgError = () => {
-        // If we were trying high res and failed, try low res
-        if (imgSrc === getDirectDriveUrl(task.portada_link) && task.miniatura_web) {
-            setImgSrc(task.miniatura_web)
+        // If the proxy fails for miniatura, try proxying the high res link as backup
+        // encodeURIComponent is crucial for passing url as param
+        if (task.miniatura_web && imgSrc.includes(encodeURIComponent(task.miniatura_web)) && task.portada_link) {
+            setImgSrc(`/api/proxy?url=${encodeURIComponent(task.portada_link)}`)
         } else {
-            // If we failed both or started with low res, show error
             setImgError(true)
         }
     }
@@ -179,12 +184,7 @@ const TaskDetail = () => {
             <style>{`
                 .task-detail-container {
                     padding-bottom: 40px;
-                    background: var(--background);
-                    min-height: 100vh;
-                    max-width: 600px; /* Limit width for desktop specifically */
-                    margin: 0 auto;   /* Center on desktop */
-                    position: relative;
-                    box-shadow: 0 0 20px rgba(0,0,0,0.5); /* Nice shadow on desktop */
+                    /* background: var(--background); Remove background to blend or keep if needed. */
                 }
                 .detail-header {
                     position: sticky;
