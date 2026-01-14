@@ -144,12 +144,7 @@ const TaskDetail = () => {
                         </a>
                     )}
 
-                    {task.video && (
-                        <a href={task.video} target="_blank" rel="noopener noreferrer" className="action-chip">
-                            <ExternalLink size={18} />
-                            <span>Video YouTube</span>
-                        </a>
-                    )}
+
                 </div>
 
                 {/* Description Box */}

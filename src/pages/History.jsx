@@ -1,11 +1,13 @@
 import React, { useState, useEffect } from 'react'
-import { FileVideo, ExternalLink, Download, Clock, CheckCircle, AlertCircle } from 'lucide-react'
+import { FileVideo, ExternalLink, Download, Clock, CheckCircle, AlertCircle, Search, RefreshCw, Trash } from 'lucide-react'
 import { callN8N } from '../services/n8n'
 import { useNavigate } from 'react-router-dom'
 
 const History = () => {
     const navigate = useNavigate()
     const [tasks, setTasks] = useState([])
+    const [filteredTasks, setFilteredTasks] = useState([])
+    const [searchTerm, setSearchTerm] = useState('')
     const [loading, setLoading] = useState(true)
     const [error, setError] = useState('')
 
@@ -16,7 +18,31 @@ const History = () => {
         fetchTasks()
     }, [])
 
+    useEffect(() => {
+        // Filter tasks when searchTerm or tasks change
+        if (!searchTerm.trim()) {
+            setFilteredTasks(tasks)
+        } else {
+            const lowerTerm = searchTerm.toLowerCase()
+            const filtered = tasks.filter(task => {
+                const vidId = getVideoId(task.video || task.video_url || task.url);
+                return (
+                    (task.titulo && task.titulo.toLowerCase().includes(lowerTerm)) ||
+                    (task.name && task.name.toLowerCase().includes(lowerTerm)) ||
+                    (task.email && task.email.toLowerCase().includes(lowerTerm)) ||
+                    (task.texto && task.texto.toLowerCase().includes(lowerTerm)) ||
+                    (task.descripcion && task.descripcion.toLowerCase().includes(lowerTerm)) ||
+                    (task.prompt && task.prompt.toLowerCase().includes(lowerTerm)) ||
+                    (vidId && vidId.toLowerCase().includes(lowerTerm))
+                )
+            })
+            setFilteredTasks(filtered)
+        }
+    }, [searchTerm, tasks])
+
     const fetchTasks = async () => {
+        setLoading(true)
+        setError('')
         try {
             // Using GET as confirmed
             const data = await callN8N(HISTORY_WEBHOOK_ID, {}, 'GET')
@@ -26,9 +52,11 @@ const History = () => {
                     new Date(b.createdAt || 0) - new Date(a.createdAt || 0)
                 )
                 setTasks(sorted)
+                setFilteredTasks(sorted)
             } else {
                 // If it returns a single object, wrap it
                 setTasks([data])
+                setFilteredTasks([data])
             }
         } catch (err) {
             console.error(err)
@@ -44,13 +72,52 @@ const History = () => {
         return 'pending'
     }
 
+    // Helper to extract Video ID
+    const getVideoId = (url) => {
+        if (!url) return null;
+        const regExp = /^.*(youtu.be\/|v\/|u\/\w\/|embed\/|watch\?v=|&v=)([^#&?]*).*/;
+        const match = url.match(regExp);
+        return (match && match[2].length === 11) ? match[2] : null;
+    };
+
+    // Delete a task by raw video parameter using N8N webhook
+    const handleDelete = async (video) => {
+        if (!video) return;
+        try {
+            // Send the raw video value as the 'id' query parameter (GET)
+            await callN8N('0078c759-9211-461a-8928-0b9852e4967a', { id: video }, 'GET');
+            fetchTasks();
+            // Show success alert
+            window.alert('✅ Tarea eliminada correctamente');
+        } catch (err) {
+            console.error('Error deleting task', err);
+            // Show error alert
+            window.alert('❌ Error al eliminar la tarea');
+        }
+    };
+
     return (
         <div className="page-container animate-fade-in">
             <header className="page-header">
-                <h2>Historial de Generaciones</h2>
+                <div className="header-row">
+                    <h2>Historial</h2>
+                    <button onClick={fetchTasks} className="refresh-btn" disabled={loading}>
+                        <RefreshCw size={20} className={loading ? 'spinning' : ''} />
+                    </button>
+                </div>
+                <div className="search-bar glass-panel">
+                    <Search size={18} className="search-icon" />
+                    <input
+                        type="text"
+                        placeholder="Buscar por título, usuario o prompt..."
+                        value={searchTerm}
+                        onChange={(e) => setSearchTerm(e.target.value)}
+                        className="search-input"
+                    />
+                </div>
             </header>
 
-            {loading && (
+            {loading && tasks.length === 0 && ( /* Only show full page loading if no tasks yet */
                 <div className="loading-state">
                     <div className="spinner"></div>
                     <p>Cargando tareas...</p>
@@ -64,15 +131,21 @@ const History = () => {
                 </div>
             )}
 
-            {!loading && !error && tasks.length === 0 && (
+            {!loading && !error && filteredTasks.length === 0 && (
                 <div className="empty-state glass-panel">
-                    <p>No hay tareas registradas aún.</p>
+                    {searchTerm ? (
+                        <p>No se encontraron resultados para "{searchTerm}"</p>
+                    ) : (
+                        <p>No hay tareas registradas aún.</p>
+                    )}
                 </div>
             )}
 
             <div className="tasks-list">
-                {tasks.map((task, index) => {
+                {filteredTasks.map((task, index) => {
                     const status = getStatus(task)
+                    const videoId = getVideoId(task.video); // video field only
+
                     return (
                         <div
                             key={index}
@@ -90,12 +163,15 @@ const History = () => {
                                 <div className="task-info">
                                     <h4 className="task-title">{task.titulo || 'Portada YouTube'}</h4>
 
-                                    {(task.name || task.email) && (
-                                        <div className="task-requester">
-                                            {task.name && <span className="req-name">{task.name}</span>}
-                                            {task.email && <span className="req-email">{task.email}</span>}
-                                        </div>
-                                    )}
+                                    <div className="task-subinfo">
+                                        {videoId && <span className="video-id">ID: {videoId}</span>}
+                                        {task.video && <span className="video-raw">{task.video}</span>}
+                                        {(task.name || task.email) && (
+                                            <span className="task-requester">
+                                                • {task.name ? `${task.name} (${task.email})` : task.email}
+                                            </span>
+                                        )}
+                                    </div>
 
                                     <span className="click-hint">Ver detalles</span>
                                 </div>
@@ -114,6 +190,20 @@ const History = () => {
                                             <Download size={16} /> Drive
                                         </a>
                                     )}
+                                    {/* Delete button with confirmation */}
+                                    <a href="#"
+                                        onClick={(e) => {
+                                            e.preventDefault();
+                                            e.stopPropagation();
+                                            if (window.confirm('¿Estás seguro de eliminar esta tarea?')) {
+                                                handleDelete(task.video);
+                                            }
+                                        }}
+                                        className="action-btn"
+                                        title="Eliminar"
+                                    >
+                                        <Trash size={16} />
+                                    </a>
                                 </div>
                             )}
                             {/* Timestamp if available */}
@@ -130,6 +220,80 @@ const History = () => {
             <style>{`
                 .page-header {
                     margin-bottom: 20px;
+                }
+                .header-row {
+                    display: flex;
+                    justify-content: space-between;
+                    align-items: center;
+                }
+                .refresh-btn {
+                    background: none;
+                    border: none;
+                    color: var(--text-secondary);
+                    cursor: pointer;
+                    padding: 8px;
+                    border-radius: 50%;
+                    transition: all 0.2s;
+                    display: flex;
+                    align-items: center;
+                    justify-content: center;
+                }
+                .refresh-btn:hover {
+                    background: rgba(255,255,255,0.1);
+                    color: white;
+                }
+                .refresh-btn:disabled {
+                    opacity: 0.5;
+                    cursor: not-allowed;
+                }
+                .spinning {
+                    animation: spin 1s linear infinite;
+                }
+
+                .task-subinfo {
+                    display: flex;
+                    align-items: center;
+                    gap: 6px;
+                    flex-wrap: wrap;
+                    margin-bottom: 4px;
+                    font-size: 0.75rem;
+                }
+                .video-id {
+                    font-family: monospace;
+                    background: rgba(255,255,255,0.1);
+                    padding: 2px 6px;
+                    border-radius: 4px;
+                    color: var(--primary-color);
+                    font-size: 0.7rem;
+                }
+                .task-requester {
+                    color: var(--text-secondary);
+                }
+                
+                /* Keep previous search bar styles */
+                .search-bar {
+                    display: flex;
+                    align-items: center;
+                    padding: 4px 12px;
+                    margin-top: 12px;
+                    border-radius: 8px;
+                }
+                .search-icon {
+                    color: var(--text-secondary);
+                    margin-right: 8px;
+                }
+                .search-input {
+                    background: none;
+                    border: none;
+                    color: white;
+                    padding: 8px 0;
+                    width: 100%;
+                    outline: none;
+                    font-size: 0.95rem;
+                }
+                .search-input::placeholder {
+                    color: var(--text-secondary);
+                    opacity: 0.6;
                 }
                 .loading-state {
                     text-align: center;
